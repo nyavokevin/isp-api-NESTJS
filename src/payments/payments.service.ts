@@ -1,97 +1,84 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { DatabaseService, PersistedPayment } from '../database/database.service';
+import { TicketsService } from '../tickets/tickets.service';
+import { TicketStatus } from '../tickets/tickets.dto';
 import {
   CreatePaymentDto,
-  PaymentMethod,
   PaymentQueryDto,
   PaymentState,
   UpdatePaymentDto,
 } from './payments.dto';
 
-let SEED_PAYMENTS = [
-  {
-    id: 'p1',
-    clientId: 'c1',
-    client: 'Jean Rakoto',
-    invoice: 'INV-2025-001',
-    method: PaymentMethod.MVOLA,
-    amount: '25000',
-    reference: 'MV-20250101',
-    state: PaymentState.COLLECTED,
-    dueDate: '2025-01-31',
-    extension: '30 jours',
-    notes: '',
-    createdAt: new Date('2025-01-05').toISOString(),
-  },
-  {
-    id: 'p2',
-    clientId: 'c2',
-    client: 'Marie Razafy',
-    invoice: 'INV-2025-002',
-    method: PaymentMethod.CASH,
-    amount: '45000',
-    reference: 'CASH-002',
-    state: PaymentState.COLLECTED,
-    dueDate: '2025-02-28',
-    extension: '30 jours',
-    notes: '',
-    createdAt: new Date('2025-02-03').toISOString(),
-  },
-  {
-    id: 'p3',
-    clientId: 'c3',
-    client: 'Paul Randria',
-    invoice: 'INV-2025-003',
-    method: PaymentMethod.ORANGE_MONEY,
-    amount: '15000',
-    reference: '',
-    state: PaymentState.OVERDUE,
-    dueDate: '2025-03-15',
-    extension: '',
-    notes: 'Client non joignable',
-    createdAt: new Date('2025-03-01').toISOString(),
-  },
-  {
-    id: 'p4',
-    clientId: 'c4',
-    client: 'Haja Rasolofo',
-    invoice: 'INV-2025-004',
-    method: PaymentMethod.BANK_TRANSFER,
-    amount: '95000',
-    reference: 'VIR-20250401',
-    state: PaymentState.COLLECTED,
-    dueDate: '2025-04-30',
-    extension: '30 jours',
-    notes: '',
-    createdAt: new Date('2025-04-02').toISOString(),
-  },
-  {
-    id: 'p5',
-    clientId: 'c5',
-    client: 'Soa Andriantsoa',
-    invoice: 'INV-2025-005',
-    method: PaymentMethod.AIRTEL_MONEY,
-    amount: '25000',
-    reference: '',
-    state: PaymentState.PENDING,
-    dueDate: '2025-05-31',
-    extension: '',
-    notes: 'En attente de confirmation',
-    createdAt: new Date('2025-05-01').toISOString(),
-  },
-];
-
-let idCounter = 6;
-
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
 
+  constructor(
+    private database: DatabaseService,
+    private ticketsService: TicketsService,
+  ) {}
+
+  private async withTicketStatus(payment: PersistedPayment) {
+    if (!payment.ticketId) {
+      return {
+        ...payment,
+        ticketStatus: '',
+      };
+    }
+
+    try {
+      const ticket = await this.ticketsService.findOne(payment.ticketId);
+      return {
+        ...payment,
+        ticketStatus: ticket.status,
+      };
+    } catch {
+      return {
+        ...payment,
+        ticketStatus: '',
+      };
+    }
+  }
+
+  private nextPaymentId(payments: { id: string }[]) {
+    const maxId = payments.reduce((max, payment) => {
+      const value = parseInt(payment.id.replace(/^p/, ''), 10);
+      return Number.isNaN(value) ? max : Math.max(max, value);
+    }, 0);
+
+    return `p${maxId + 1}`;
+  }
+
+  private nextClientId(payments: { clientId: string }[]) {
+    const maxId = payments.reduce((max, payment) => {
+      const value = parseInt((payment.clientId || '').replace(/^c/i, ''), 10);
+      return Number.isNaN(value) ? max : Math.max(max, value);
+    }, 0);
+
+    return `c${maxId + 1}`;
+  }
+
+  private nextInvoice(payments: { invoice: string }[]) {
+    const currentYear = new Date().getFullYear();
+    const maxId = payments.reduce((max, payment) => {
+      const value = parseInt((payment.invoice || '').split('-').pop() || '0', 10);
+      return Number.isNaN(value) ? max : Math.max(max, value);
+    }, 0);
+
+    return `INV-${currentYear}-${String(maxId + 1).padStart(5, '0')}`;
+  }
+
+  private nextReference(payments: { reference: string }[]) {
+    const maxId = payments.reduce((max, payment) => {
+      const value = parseInt((payment.reference || '').replace(/^REF-?/i, ''), 10);
+      return Number.isNaN(value) ? max : Math.max(max, value);
+    }, 0);
+
+    return `REF-${String(maxId + 1).padStart(5, '0')}`;
+  }
+
   async findAll(query: PaymentQueryDto) {
-    let payments = [...SEED_PAYMENTS];
+    let payments = [...(await this.database.getPayments())];
 
     if (query.search) {
       const q = query.search.toLowerCase();
@@ -114,54 +101,90 @@ export class PaymentsService {
 
     return {
       total: payments.length,
-      data: payments,
+      data: await Promise.all(payments.map((payment) => this.withTicketStatus(payment))),
     };
   }
 
   async findOne(id: string) {
-    const payment = SEED_PAYMENTS.find((p) => p.id === id);
+    const payments = await this.database.getPayments();
+    const payment = payments.find((p) => p.id === id);
     if (!payment) throw new NotFoundException(`Paiement #${id} introuvable`);
-    return payment;
+    return this.withTicketStatus(payment);
   }
 
   async create(dto: CreatePaymentDto, clientName?: string) {
-    const newPayment = {
-      id: `p${idCounter++}`,
-      clientId: dto.clientId,
-      client: clientName || dto.clientId,
-      invoice: dto.invoice,
+    const payments = await this.database.getPayments();
+    const generatedClientId = dto.clientId?.trim() || this.nextClientId(payments);
+    const createdAt = new Date().toISOString();
+    const createdDate = createdAt.slice(0, 10);
+    const newPayment: PersistedPayment = {
+      id: this.nextPaymentId(payments),
+      clientId: generatedClientId,
+      client: dto.client || clientName || generatedClientId,
+      planId: dto.planId || '',
+      planName: dto.planName || '',
+      invoice: this.nextInvoice(payments),
       method: dto.method,
       amount: dto.amount,
-      reference: dto.reference || '',
+      reference: this.nextReference(payments),
       state: dto.state || PaymentState.COLLECTED,
-      dueDate: dto.dueDate,
-      extension: dto.extension || '',
+      dueDate: createdDate,
+      extension: '',
       notes: dto.notes || '',
-      createdAt: new Date().toISOString(),
+      createdAt,
     };
 
-    SEED_PAYMENTS.push(newPayment);
+    payments.push(newPayment);
+    await this.database.savePayments(payments);
+
+    const ticket = await this.ticketsService.createFromPayment(newPayment);
+    newPayment.ticketId = ticket.id;
+    newPayment.ticketNumber = ticket.ticketNumber;
+
+    const persistedPayments = await this.database.getPayments();
+    const index = persistedPayments.findIndex((payment) => payment.id === newPayment.id);
+    persistedPayments[index] = newPayment;
+    await this.database.savePayments(persistedPayments);
+
     this.logger.log(`Paiement créé: ${newPayment.invoice} pour ${newPayment.client}`);
-    return newPayment;
+    return this.withTicketStatus(newPayment);
   }
 
   async update(id: string, dto: UpdatePaymentDto) {
-    const idx = SEED_PAYMENTS.findIndex((p) => p.id === id);
+    const payments = await this.database.getPayments();
+    const idx = payments.findIndex((p) => p.id === id);
     if (idx === -1) throw new NotFoundException(`Paiement #${id} introuvable`);
 
-    SEED_PAYMENTS[idx] = { ...SEED_PAYMENTS[idx], ...dto };
-    return SEED_PAYMENTS[idx];
+    payments[idx] = { ...payments[idx], ...dto };
+    await this.database.savePayments(payments);
+
+    if (payments[idx].ticketId) {
+      await this.ticketsService.update(payments[idx].ticketId, {
+        clientId: payments[idx].clientId,
+        client: payments[idx].client,
+        invoice: payments[idx].invoice,
+        amount: payments[idx].amount,
+        title: `Paiement enregistre pour ${payments[idx].invoice}`,
+        description: payments[idx].notes || 'Ticket mis a jour apres modification du paiement.',
+      });
+    }
+
+    return this.withTicketStatus(payments[idx]);
   }
 
   async remove(id: string) {
-    const idx = SEED_PAYMENTS.findIndex((p) => p.id === id);
+    const payments = await this.database.getPayments();
+    const idx = payments.findIndex((p) => p.id === id);
     if (idx === -1) throw new NotFoundException(`Paiement #${id} introuvable`);
-    SEED_PAYMENTS.splice(idx, 1);
+
+    payments.splice(idx, 1);
+    await this.database.savePayments(payments);
+    await this.ticketsService.removeByPaymentId(id);
     return { message: `Paiement #${id} supprimé` };
   }
 
   async getDashboard() {
-    const all = SEED_PAYMENTS;
+    const all = await this.database.getPayments();
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();

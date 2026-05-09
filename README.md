@@ -62,6 +62,8 @@ ROUTEROS_TIMEOUT=10000
 
 ## Comptes seed (développement)
 
+Le compte admin par défaut est créé au démarrage via le seed auth dans `src/auth/auth.service.ts`.
+
 | Email                  | Mot de passe | Rôle         |
 |------------------------|--------------|--------------|
 | admin@isp.mg           | admin123     | admin        |
@@ -169,6 +171,7 @@ curl -X POST http://localhost:3001/api/auth/login \
 | GET     | `/`                          | Tout combiné                      | Dashboard monitoring complet |
 | GET     | `/system`                    | `system/resource/print`           | CPU, RAM, uptime, stockage   |
 | GET     | `/sessions`                  | `ppp/active/print`                | Sessions PPPoE actives       |
+| GET     | `/hotspot/connected`         | `ip/hotspot/active/print` + `ip/hotspot/host/print` | Clients hotspot connectés + nom appareil |
 | GET     | `/interfaces`                | `interface/print`                 | Interfaces et trafic         |
 | GET     | `/logs`                      | `log/print`                       | Journal événements           |
 | POST    | `/ping`                      | `ping`                            | Ping depuis le routeur       |

@@ -11,6 +11,7 @@ let SEED_PLANS = [
   {
     id: 'plan1',
     name: 'Fibre 5 Mbps',
+    type: 'Fiber',
     profileId: 'fiber-5mbps',
     price: 15000,
     priceWhole: '15 000',
@@ -29,6 +30,7 @@ let SEED_PLANS = [
   {
     id: 'plan2',
     name: 'Fibre 10 Mbps',
+    type: 'Fiber',
     profileId: 'fiber-10mbps',
     price: 25000,
     priceWhole: '25 000',
@@ -47,6 +49,7 @@ let SEED_PLANS = [
   {
     id: 'plan3',
     name: 'Fibre 20 Mbps',
+    type: 'Fiber',
     profileId: 'fiber-20mbps',
     price: 45000,
     priceWhole: '45 000',
@@ -65,6 +68,7 @@ let SEED_PLANS = [
   {
     id: 'plan4',
     name: 'Fibre 50 Mbps',
+    type: 'Fiber',
     profileId: 'fiber-50mbps',
     price: 95000,
     priceWhole: '95 000',
@@ -135,6 +139,7 @@ export class PlansService {
     const newPlan = {
       id: `plan${idCounter++}`,
       name: dto.name,
+      type: dto.type || 'Fiber',
       profileId: dto.profileId,
       price: dto.price,
       priceWhole: dto.price.toLocaleString('fr'),

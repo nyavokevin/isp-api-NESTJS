@@ -3,16 +3,17 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { LoginDto } from './auth.dto';
 
+const DEFAULT_ADMIN_USER = {
+  id: '1',
+  name: 'Admin ISP',
+  email: 'admin@isp.mg',
+  passwordHash: bcrypt.hashSync('admin123', 10),
+  role: 'admin',
+};
+
 // Seed users (in production: use a real database)
 const SEED_USERS = [
-  {
-    id: '1',
-    name: 'Administrateur ISP',
-    email: 'admin@isp.mg',
-    // password: admin123
-    passwordHash: bcrypt.hashSync('admin123', 10),
-    role: 'admin',
-  },
+  DEFAULT_ADMIN_USER,
   {
     id: '2',
     name: 'Technicien Réseau',

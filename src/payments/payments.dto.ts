@@ -1,11 +1,5 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import {
-  IsEnum,
-  IsISO8601,
-  IsOptional,
-  IsString,
-  MinLength,
-} from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 export enum PaymentState {
   COLLECTED = 'Collected',
@@ -23,13 +17,25 @@ export enum PaymentMethod {
 }
 
 export class CreatePaymentDto {
-  @ApiProperty({ example: 'c1', description: 'ID du client' })
+  @ApiPropertyOptional({ example: 'c1', description: 'ID du client' })
+  @IsOptional()
   @IsString()
-  clientId: string;
+  clientId?: string;
 
-  @ApiProperty({ example: 'INV-2025-001', description: 'Numéro de facture' })
+  @ApiPropertyOptional({ example: 'Jean Rakoto', description: 'Nom du client' })
+  @IsOptional()
   @IsString()
-  invoice: string;
+  client?: string;
+
+  @ApiPropertyOptional({ example: 'plan2', description: 'ID du plan choisi' })
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
+  @ApiPropertyOptional({ example: 'Fibre 10 Mbps', description: 'Nom du plan choisi' })
+  @IsOptional()
+  @IsString()
+  planName?: string;
 
   @ApiProperty({ enum: PaymentMethod, example: PaymentMethod.MVOLA })
   @IsEnum(PaymentMethod)
@@ -39,24 +45,10 @@ export class CreatePaymentDto {
   @IsString()
   amount: string;
 
-  @ApiPropertyOptional({ example: 'REF-20250101', description: 'Référence transaction' })
-  @IsOptional()
-  @IsString()
-  reference?: string;
-
   @ApiPropertyOptional({ enum: PaymentState, default: PaymentState.COLLECTED })
   @IsOptional()
   @IsEnum(PaymentState)
   state?: PaymentState;
-
-  @ApiProperty({ example: '2025-12-31', description: "Date d'échéance" })
-  @IsISO8601()
-  dueDate: string;
-
-  @ApiPropertyOptional({ description: "Durée d'extension (ex: 30 jours)" })
-  @IsOptional()
-  @IsString()
-  extension?: string;
 
   @ApiPropertyOptional()
   @IsOptional()

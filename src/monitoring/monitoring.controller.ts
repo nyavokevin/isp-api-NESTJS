@@ -48,6 +48,12 @@ export class MonitoringController {
     return this.monitoringService.getPPPoESessions();
   }
 
+  @Get('hotspot/connected')
+  @ApiOperation({ summary: 'Clients hotspot connectés avec nom de l appareil' })
+  getHotspotConnectedDevices() {
+    return this.monitoringService.getHotspotConnectedDevices();
+  }
+
   @Get('interfaces')
   @ApiOperation({ summary: 'Interfaces réseau et trafic' })
   getInterfaces() {
@@ -71,5 +77,12 @@ export class MonitoringController {
   @ApiParam({ name: 'id', description: 'ID de la session PPPoE' })
   disconnectSession(@Param('id') id: string) {
     return this.monitoringService.disconnectSession(id);
+  }
+
+  @Post('hotspot/:id/disconnect')
+  @ApiOperation({ summary: 'Déconnecter une session hotspot active' })
+  @ApiParam({ name: 'id', description: 'ID de la session hotspot' })
+  disconnectHotspotSession(@Param('id') id: string) {
+    return this.monitoringService.disconnectHotspotSession(id);
   }
 }

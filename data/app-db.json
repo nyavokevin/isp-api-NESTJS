@@ -1,0 +1,39 @@
+{
+  "payments": [
+    {
+      "id": "p1",
+      "clientId": "c1",
+      "client": "Test",
+      "planId": "",
+      "planName": "",
+      "invoice": "INV-2026-00001",
+      "method": "cash",
+      "amount": "",
+      "reference": "REF-00001",
+      "state": "Collected",
+      "dueDate": "2026-05-09",
+      "extension": "",
+      "notes": "",
+      "createdAt": "2026-05-09T23:26:09.824Z",
+      "ticketId": "t1",
+      "ticketNumber": "TCK-2026-00001"
+    }
+  ],
+  "tickets": [
+    {
+      "id": "t1",
+      "ticketNumber": "TCK-2026-00001",
+      "paymentId": "p1",
+      "clientId": "c1",
+      "client": "Test",
+      "invoice": "INV-2026-00001",
+      "amount": "",
+      "title": "Paiement enregistre pour INV-2026-00001",
+      "description": "Ticket genere automatiquement apres paiement.",
+      "status": "Active",
+      "used": false,
+      "createdAt": "2026-05-09T23:26:09.825Z",
+      "updatedAt": "2026-05-09T23:26:09.825Z"
+    }
+  ]
+}

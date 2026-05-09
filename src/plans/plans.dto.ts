@@ -14,6 +14,11 @@ export class CreatePlanDto {
   @MinLength(2)
   name: string;
 
+  @ApiPropertyOptional({ example: 'Fiber', description: 'Type commercial du plan' })
+  @IsOptional()
+  @IsString()
+  type?: string;
+
   @ApiProperty({ example: 'fiber-10mbps', description: 'Identifiant profil PPPoE MikroTik' })
   @IsString()
   profileId: string;

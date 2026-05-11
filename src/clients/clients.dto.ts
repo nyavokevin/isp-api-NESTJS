@@ -42,6 +42,11 @@ export class CreateClientDto {
   @IsString()
   plan: string;
 
+  @ApiPropertyOptional({ example: 'plan2', description: 'ID interne du plan souscrit' })
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
   @ApiPropertyOptional({ enum: ClientStatus, default: ClientStatus.ACTIVE })
   @IsOptional()
   @IsEnum(ClientStatus)
@@ -88,4 +93,9 @@ export class ClientQueryDto {
   @IsOptional()
   @IsString()
   plan?: string;
+
+  @ApiPropertyOptional({ description: 'Filtrer par ID du plan' })
+  @IsOptional()
+  @IsString()
+  planId?: string;
 }

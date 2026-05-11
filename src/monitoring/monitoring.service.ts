@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ClientsService } from '../clients/clients.service';
+import { DatabaseService } from '../database/database.service';
+import { PlansService } from '../plans/plans.service';
 import { RouterOSService } from '../routeros/routeros.service';
 
 // Fallback seed data when RouterOS is not available
@@ -101,7 +104,204 @@ function parseUptime(uptimeStr: string): string {
 export class MonitoringService {
   private readonly logger = new Logger(MonitoringService.name);
 
-  constructor(private routeros: RouterOSService) {}
+  constructor(
+    private routeros: RouterOSService,
+    private clientsService: ClientsService,
+    private plansService: PlansService,
+    private database: DatabaseService,
+  ) {}
+
+  private formatBytes(bytes: number) {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let value = bytes;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  private parseDurationToMilliseconds(value: string) {
+    const normalized = String(value || '').toLowerCase();
+    const patterns: Array<[RegExp, number]> = [
+      [/(\d+)\s*w/g, 7 * 24 * 60 * 60 * 1000],
+      [/(\d+)\s*(jour|jours|day|days|d)/g, 24 * 60 * 60 * 1000],
+      [/(\d+)\s*(heure|heures|hour|hours|h)/g, 60 * 60 * 1000],
+      [/(\d+)\s*(minute|minutes|min|m)/g, 60 * 1000],
+      [/(\d+)\s*(second|seconds|sec|s)/g, 1000],
+    ];
+
+    let total = 0;
+    for (const [pattern, unit] of patterns) {
+      let match: RegExpExecArray | null;
+      while ((match = pattern.exec(normalized)) !== null) {
+        total += Number(match[1]) * unit;
+      }
+    }
+    return total;
+  }
+
+  private buildAverageRate(bytes: number, uptime: string) {
+    const durationMs = this.parseDurationToMilliseconds(uptime);
+    if (!bytes || !durationMs) {
+      return '0 kbps';
+    }
+    const kbps = (bytes * 8) / (durationMs / 1000) / 1000;
+    return `${kbps.toFixed(kbps >= 10 ? 0 : 1)} kbps`;
+  }
+
+  private formatBitsPerSecond(bitsPerSecond: number) {
+    if (!bitsPerSecond) {
+      return '0 bps';
+    }
+
+    const units = ['bps', 'kbps', 'Mbps', 'Gbps'];
+    let value = bitsPerSecond;
+    let unitIndex = 0;
+
+    while (value >= 1000 && unitIndex < units.length - 1) {
+      value /= 1000;
+      unitIndex += 1;
+    }
+
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  async getInterfaceLiveStats(interfaceName = 'ether1') {
+    try {
+      const stats = await this.routeros.getInterfaceStats(interfaceName);
+      const stat = stats[0] || {};
+      const rxBitsPerSecond = parseInt(stat['rx-bits-per-second'] || stat['rx-bps'] || '0', 10) || 0;
+      const txBitsPerSecond = parseInt(stat['tx-bits-per-second'] || stat['tx-bps'] || '0', 10) || 0;
+
+      return {
+        interface: interfaceName,
+        rxBitsPerSecond,
+        txBitsPerSecond,
+        rxRate: this.formatBitsPerSecond(rxBitsPerSecond),
+        txRate: this.formatBitsPerSecond(txBitsPerSecond),
+      };
+    } catch (err: any) {
+      this.logger.warn(`Statistiques live interface non disponibles: ${err.message}`);
+      return {
+        interface: interfaceName,
+        rxBitsPerSecond: 450200000,
+        txBitsPerSecond: 120800000,
+        rxRate: '450.2 Mbps',
+        txRate: '120.8 Mbps',
+      };
+    }
+  }
+
+  async getCurrentUserInternetUsage() {
+    const [hotspotSessions, pppoeSessions] = await Promise.all([
+      this.routeros.getActiveHotspotSessions().catch(() => []),
+      this.routeros.getActivePPPoESessions().catch(() => []),
+    ]);
+
+    const hotspotUsage = hotspotSessions.map((session, index) => {
+      const bytesIn = parseInt(session['bytes-in'] || '0', 10) || 0;
+      const bytesOut = parseInt(session['bytes-out'] || '0', 10) || 0;
+      const username = session.user || session.name || `hotspot-${index + 1}`;
+      return {
+        id: session['.id'] || session.id || session['#'] || `hotspot-${index + 1}`,
+        username,
+        source: 'hotspot',
+        address: session.address || '',
+        uptime: session.uptime || '',
+        downloadUsed: this.formatBytes(bytesIn),
+        uploadUsed: this.formatBytes(bytesOut),
+        downloadRate: this.buildAverageRate(bytesIn, session.uptime || ''),
+        uploadRate: this.buildAverageRate(bytesOut, session.uptime || ''),
+        totalBytes: bytesIn + bytesOut,
+      };
+    });
+
+    const pppoeUsage = pppoeSessions.map((session, index) => {
+      const bytesIn = parseInt(session['bytes-in'] || '0', 10) || 0;
+      const bytesOut = parseInt(session['bytes-out'] || '0', 10) || 0;
+      const username = session.name || session.user || `pppoe-${index + 1}`;
+      return {
+        id: session['.id'] || session.id || `pppoe-${index + 1}`,
+        username,
+        source: 'pppoe',
+        address: session.address || '',
+        uptime: session.uptime || '',
+        downloadUsed: this.formatBytes(bytesIn),
+        uploadUsed: this.formatBytes(bytesOut),
+        downloadRate: this.buildAverageRate(bytesIn, session.uptime || ''),
+        uploadRate: this.buildAverageRate(bytesOut, session.uptime || ''),
+        totalBytes: bytesIn + bytesOut,
+      };
+    });
+
+    return [...hotspotUsage, ...pppoeUsage]
+      .sort((a, b) => b.totalBytes - a.totalBytes)
+      .map(({ totalBytes, ...item }) => item);
+  }
+
+  async getDashboardSummary() {
+    const [clientStats, hotspotClients, pppoeSessions, tickets, payments, clientHistories, userUsage, logs] = await Promise.all([
+      this.clientsService.getStats(),
+      this.getHotspotConnectedDevices(),
+      this.getPPPoESessions(),
+      this.database.getTickets(),
+      this.database.getPayments(),
+      this.database.getClientHistories(),
+      this.getCurrentUserInternetUsage(),
+      this.getLogs(),
+    ]);
+
+    const clientHistory = clientHistories
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10);
+
+    const now = new Date();
+    const monthlyRevenue = payments
+      .filter((payment) => {
+        const createdAt = new Date(payment.createdAt);
+        return payment.state === 'Collected'
+          && createdAt.getMonth() === now.getMonth()
+          && createdAt.getFullYear() === now.getFullYear();
+      })
+      .reduce((sum, payment) => sum + parseFloat(payment.amount || '0'), 0);
+
+    const recentPayments = payments
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 5)
+      .map((payment) => ({
+        id: payment.id,
+        invoice: payment.invoice,
+        client: payment.client,
+        planName: payment.planName || '-',
+        amount: `${parseFloat(payment.amount || '0').toLocaleString('fr')} Ar`,
+        method: payment.method,
+        createdAt: payment.createdAt,
+        state: payment.state,
+      }));
+
+    const ticketActive = tickets.filter((ticket) => String(ticket.status).toLowerCase() === 'active').length;
+    const ticketExpired = tickets.filter((ticket) => String(ticket.status).toLowerCase() === 'expired').length;
+
+    return {
+      metrics: {
+        totalClients: clientStats.total,
+        connectedClients: hotspotClients.length + pppoeSessions.length,
+        ticketActive,
+        ticketExpired,
+        historyCount: clientHistories.length,
+      },
+      monthlyRevenue: `${monthlyRevenue.toLocaleString('fr')} Ar`,
+      recentPayments,
+      clientHistory,
+      currentUsage: userUsage.slice(0, 6),
+      alerts: logs.slice(0, 5),
+    };
+  }
 
   async getSystemHealth() {
     try {
@@ -188,6 +388,8 @@ export class MonitoringService {
         this.routeros.getHotspotHosts(),
         this.routeros.getDHCPLeases(),
       ]);
+      const clientPayload = await this.clientsService.findAll({});
+      const clientsByLogin = new Map(clientPayload.data.map((client) => [client.pppoeLogin, client]));
 
       const hostsByMac = new Map(
         hosts
@@ -210,23 +412,30 @@ export class MonitoringService {
           .map((lease) => [lease.address, lease]),
       );
 
-      return sessions.map((session, index) => {
+      return Promise.all(sessions.map(async (session, index) => {
         const macAddress = session['mac-address'] || session['caller-id'] || '';
         const ipAddress = session.address || '';
         const host = hostsByMac.get(macAddress) || hostsByIp.get(ipAddress);
         const lease = leasesByMac.get(macAddress) || leasesByIp.get(ipAddress);
         const id = session['#']?.toString() || session['.id'] || session.id || index.toString();
+        const username = session.user || session.name || '';
+        const matchedClient = clientsByLogin.get(username);
+        const matchedPlan = matchedClient?.planId
+          ? await this.plansService.findById(matchedClient.planId)
+          : null;
 
         return {
           id,
-          username: session.user || session.name || '',
+          username,
           server: session.server || '',
           ipAddress,
           'mac-address': macAddress,
           uptime: session.uptime || '',
           deviceName: host?.['host-name'] || lease?.['host-name'] || session.user || 'Unknown device',
+          planId: matchedClient?.planId || '',
+          planName: matchedPlan?.name || matchedClient?.planName || matchedClient?.plan || '',
         };
-      });
+      }));
     } catch (err: any) {
       this.logger.warn(`Hotspot devices non disponibles: ${err.message}`);
       return [
@@ -352,18 +561,25 @@ export class MonitoringService {
   }
 
   async getFullDashboard() {
-    const [systemHealth, sessions, interfaces, logs] = await Promise.all([
+    const [systemHealth, sessions, hotspotClients, interfaces, interfaceLiveStats, logs, currentUsage] = await Promise.all([
       this.getSystemHealth(),
       this.getPPPoESessions(),
+      this.getHotspotConnectedDevices(),
       this.getInterfaces(),
+      this.getInterfaceLiveStats(),
       this.getLogs(),
+      this.getCurrentUserInternetUsage(),
     ]);
 
     return {
       systemHealth,
       pppoeSessionCount: sessions.length,
       pppoeActiveSessions: sessions,
+      hotspotSessionCount: hotspotClients.length,
+      hotspotClients,
       interfaces,
+      interfaceLiveStats,
+      currentUsage,
       recentLogs: logs,
       trafficChart: SEED_MONITORING.trafficChart,
       alerts: SEED_MONITORING.alerts,

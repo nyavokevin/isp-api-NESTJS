@@ -3,6 +3,21 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { PaymentMethod, PaymentState } from '../payments/payments.dto';
 
+export type PersistedPlan = {
+  id: string;
+  name: string;
+  type: string;
+  profileId: string;
+  price: number;
+  download: number;
+  upload: number;
+  quota: string;
+  validity: string;
+  popular: boolean;
+  description: string;
+  createdAt: string;
+};
+
 export type PersistedPayment = {
   id: string;
   clientId: string;
@@ -41,12 +56,81 @@ export type PersistedTicket = {
   updatedAt: string;
 };
 
+export type PersistedClientHistory = {
+  id: string;
+  clientId: string;
+  clientName: string;
+  action: string;
+  details: string;
+  createdAt: string;
+};
+
 type StoreData = {
+  plans: PersistedPlan[];
   payments: PersistedPayment[];
   tickets: PersistedTicket[];
+  clientHistories: PersistedClientHistory[];
 };
 
 const DEFAULT_STORE: StoreData = {
+  plans: [
+    {
+      id: 'plan1',
+      name: 'Fibre 5 Mbps',
+      type: 'Fiber',
+      profileId: 'fiber-5mbps',
+      price: 15000,
+      download: 5,
+      upload: 2,
+      quota: 'Illimité',
+      validity: '30 jours',
+      popular: false,
+      description: 'Offre entrée de gamme',
+      createdAt: new Date('2024-01-01').toISOString(),
+    },
+    {
+      id: 'plan2',
+      name: 'Fibre 10 Mbps',
+      type: 'Fiber',
+      profileId: 'fiber-10mbps',
+      price: 25000,
+      download: 10,
+      upload: 5,
+      quota: 'Illimité',
+      validity: '30 jours',
+      popular: true,
+      description: 'Offre la plus populaire',
+      createdAt: new Date('2024-01-01').toISOString(),
+    },
+    {
+      id: 'plan3',
+      name: 'Fibre 20 Mbps',
+      type: 'Fiber',
+      profileId: 'fiber-20mbps',
+      price: 45000,
+      download: 20,
+      upload: 10,
+      quota: 'Illimité',
+      validity: '30 jours',
+      popular: false,
+      description: 'Idéal pour les familles',
+      createdAt: new Date('2024-01-01').toISOString(),
+    },
+    {
+      id: 'plan4',
+      name: 'Fibre 50 Mbps',
+      type: 'Fiber',
+      profileId: 'fiber-50mbps',
+      price: 95000,
+      download: 50,
+      upload: 25,
+      quota: 'Illimité',
+      validity: '30 jours',
+      popular: false,
+      description: 'Offre premium entreprise',
+      createdAt: new Date('2024-01-01').toISOString(),
+    },
+  ],
   payments: [
     {
       id: 'p1',
@@ -216,6 +300,7 @@ const DEFAULT_STORE: StoreData = {
       updatedAt: new Date('2025-05-02').toISOString(),
     },
   ],
+  clientHistories: [],
 };
 
 @Injectable()
@@ -236,7 +321,16 @@ export class DatabaseService {
   private async readStore(): Promise<StoreData> {
     await this.ready;
     const raw = await readFile(this.storePath, 'utf-8');
-    return JSON.parse(raw) as StoreData;
+    const parsed = JSON.parse(raw) as Partial<StoreData>;
+
+    return {
+      plans: Array.isArray(parsed.plans) ? parsed.plans : DEFAULT_STORE.plans,
+      payments: Array.isArray(parsed.payments) ? parsed.payments : DEFAULT_STORE.payments,
+      tickets: Array.isArray(parsed.tickets) ? parsed.tickets : DEFAULT_STORE.tickets,
+      clientHistories: Array.isArray(parsed.clientHistories)
+        ? parsed.clientHistories
+        : DEFAULT_STORE.clientHistories,
+    };
   }
 
   private async writeStore(store: StoreData) {
@@ -247,6 +341,17 @@ export class DatabaseService {
   async getPayments() {
     const store = await this.readStore();
     return store.payments;
+  }
+
+  async getPlans() {
+    const store = await this.readStore();
+    return store.plans;
+  }
+
+  async savePlans(plans: PersistedPlan[]) {
+    const store = await this.readStore();
+    store.plans = plans;
+    await this.writeStore(store);
   }
 
   async savePayments(payments: PersistedPayment[]) {
@@ -263,6 +368,17 @@ export class DatabaseService {
   async saveTickets(tickets: PersistedTicket[]) {
     const store = await this.readStore();
     store.tickets = tickets;
+    await this.writeStore(store);
+  }
+
+  async getClientHistories() {
+    const store = await this.readStore();
+    return store.clientHistories;
+  }
+
+  async saveClientHistories(clientHistories: PersistedClientHistory[]) {
+    const store = await this.readStore();
+    store.clientHistories = clientHistories;
     await this.writeStore(store);
   }
 }

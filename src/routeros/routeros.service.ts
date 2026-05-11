@@ -295,6 +295,7 @@ export class RouterOSService implements OnModuleDestroy {
     name: string;
     password: string;
     profile?: string;
+    'rate-limit'?: string;
     'mac-address'?: string;
     comment?: string;
   }): Promise<any> {
@@ -304,6 +305,7 @@ export class RouterOSService implements OnModuleDestroy {
       profile: data.profile || 'default',
     };
 
+    if (data['rate-limit']) params['rate-limit'] = data['rate-limit'];
     if (data['mac-address']) params['mac-address'] = data['mac-address'];
     if (data.comment) params.comment = data.comment;
 
@@ -313,12 +315,14 @@ export class RouterOSService implements OnModuleDestroy {
   async updateHotspotUser(id: string, data: Partial<{
     password: string;
     profile: string;
+    'rate-limit': string;
     'mac-address': string;
     comment: string;
   }>): Promise<any> {
     const params: Record<string, string> = { '.id': id };
     if (data.password !== undefined) params.password = data.password;
     if (data.profile !== undefined) params.profile = data.profile;
+    if (data['rate-limit'] !== undefined) params['rate-limit'] = data['rate-limit'];
     if (data['mac-address'] !== undefined) params['mac-address'] = data['mac-address'];
     if (data.comment !== undefined) params.comment = data.comment;
     return this.execute('/ip/hotspot/user/set', params);
@@ -328,12 +332,18 @@ export class RouterOSService implements OnModuleDestroy {
     await this.execute('/ip/hotspot/user/remove', { '.id': id });
   }
 
-  async ensureTemporaryHotspotUser(ticket: string, macAddress?: string, profile = 'default'): Promise<void> {
+  async ensureTemporaryHotspotUser(
+    ticket: string,
+    macAddress?: string,
+    profile = 'default',
+    rateLimit?: string,
+  ): Promise<void> {
     const existingUser = await this.getHotspotUserByName(ticket);
     const existingUserId = this.getRouterOsItemId(existingUser);
     const payload = {
       password: ticket,
       profile,
+      'rate-limit': rateLimit || '',
       'mac-address': macAddress || '',
       comment: 'Temporary hotspot user created from ticket validation',
     };
@@ -348,6 +358,7 @@ export class RouterOSService implements OnModuleDestroy {
         name: ticket,
         password: ticket,
         profile,
+        'rate-limit': rateLimit,
         'mac-address': macAddress,
         comment: payload.comment,
       });
@@ -456,9 +467,9 @@ export class RouterOSService implements OnModuleDestroy {
     return this.execute('/interface/print', params);
   }
 
-  async getInterfaceStats(): Promise<any[]> {
+  async getInterfaceStats(interfaceName = 'ether1'): Promise<any[]> {
     return this.execute('/interface/monitor-traffic', {
-      interface: 'ether1',
+      interface: interfaceName,
       once: '',
     });
   }

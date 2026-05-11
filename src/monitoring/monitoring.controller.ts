@@ -36,6 +36,18 @@ export class MonitoringController {
     return this.monitoringService.getFullDashboard();
   }
 
+  @Get('dashboard-summary')
+  @ApiOperation({ summary: 'Dashboard metier clients, tickets, paiements et historique' })
+  getDashboardSummary() {
+    return this.monitoringService.getDashboardSummary();
+  }
+
+  @Get('users/current-speed')
+  @ApiOperation({ summary: 'Consommation internet courante par utilisateur connecté' })
+  getCurrentUserSpeed() {
+    return this.monitoringService.getCurrentUserInternetUsage();
+  }
+
   @Get('system')
   @ApiOperation({ summary: 'Santé système RouterOS (CPU, RAM, uptime)' })
   getSystemHealth() {

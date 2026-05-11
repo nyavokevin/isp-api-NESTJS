@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
 import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
@@ -10,6 +11,7 @@ import { DatabaseModule } from './database/database.module';
 import { TicketsModule } from './tickets/tickets.module';
 
 @Module({
+  controllers: [AppController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,

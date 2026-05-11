@@ -40,6 +40,12 @@ export class ClientsController {
     return this.clientsService.getStats();
   }
 
+  @Get('history')
+  @ApiOperation({ summary: 'Historique recent des clients' })
+  getHistory() {
+    return this.clientsService.getHistory();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Detail client' })
   @ApiParam({ name: 'id', description: 'ID du client' })

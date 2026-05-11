@@ -4,91 +4,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { DatabaseService, PersistedPlan } from '../database/database.service';
 import { RouterOSService } from '../routeros/routeros.service';
 import { CreatePlanDto, UpdatePlanDto } from './plans.dto';
 
-let SEED_PLANS = [
-  {
-    id: 'plan1',
-    name: 'Fibre 5 Mbps',
-    type: 'Fiber',
-    profileId: 'fiber-5mbps',
-    price: 15000,
-    priceWhole: '15 000',
-    priceFraction: '',
-    download: 5,
-    upload: 2,
-    downloadBar: '20%',
-    uploadBar: '10%',
-    quota: 'Illimité',
-    quotaIcon: 'all_inclusive',
-    validity: '30 jours',
-    popular: false,
-    description: 'Offre entrée de gamme',
-    createdAt: new Date('2024-01-01').toISOString(),
-  },
-  {
-    id: 'plan2',
-    name: 'Fibre 10 Mbps',
-    type: 'Fiber',
-    profileId: 'fiber-10mbps',
-    price: 25000,
-    priceWhole: '25 000',
-    priceFraction: '',
-    download: 10,
-    upload: 5,
-    downloadBar: '40%',
-    uploadBar: '25%',
-    quota: 'Illimité',
-    quotaIcon: 'all_inclusive',
-    validity: '30 jours',
-    popular: true,
-    description: 'Offre la plus populaire',
-    createdAt: new Date('2024-01-01').toISOString(),
-  },
-  {
-    id: 'plan3',
-    name: 'Fibre 20 Mbps',
-    type: 'Fiber',
-    profileId: 'fiber-20mbps',
-    price: 45000,
-    priceWhole: '45 000',
-    priceFraction: '',
-    download: 20,
-    upload: 10,
-    downloadBar: '60%',
-    uploadBar: '50%',
-    quota: 'Illimité',
-    quotaIcon: 'all_inclusive',
-    validity: '30 jours',
-    popular: false,
-    description: 'Idéal pour les familles',
-    createdAt: new Date('2024-01-01').toISOString(),
-  },
-  {
-    id: 'plan4',
-    name: 'Fibre 50 Mbps',
-    type: 'Fiber',
-    profileId: 'fiber-50mbps',
-    price: 95000,
-    priceWhole: '95 000',
-    priceFraction: '',
-    download: 50,
-    upload: 25,
-    downloadBar: '85%',
-    uploadBar: '70%',
-    quota: 'Illimité',
-    quotaIcon: 'all_inclusive',
-    validity: '30 jours',
-    popular: false,
-    description: 'Offre premium entreprise',
-    createdAt: new Date('2024-01-01').toISOString(),
-  },
-];
-
-let idCounter = 5;
-
-function buildUIPlan(plan: any) {
+function buildUIPlan(plan: PersistedPlan) {
   return {
     ...plan,
     priceWhole: plan.price.toLocaleString('fr'),
@@ -103,68 +23,129 @@ function buildUIPlan(plan: any) {
 export class PlansService {
   private readonly logger = new Logger(PlansService.name);
 
-  constructor(private routeros: RouterOSService) {}
+  constructor(
+    private routeros: RouterOSService,
+    private database: DatabaseService,
+  ) {}
+
+  private nextPlanId(plans: { id: string }[]) {
+    const maxId = plans.reduce((max, plan) => {
+      const value = parseInt(plan.id.replace(/^plan/i, ''), 10);
+      return Number.isNaN(value) ? max : Math.max(max, value);
+    }, 0);
+
+    return `plan${maxId + 1}`;
+  }
+
+  private slugifyProfileId(value: string) {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-{2,}/g, '-');
+  }
+
+  private resolveProfileId(plans: PersistedPlan[], requestedProfileId: string | undefined, name: string) {
+    const normalizedRequested = String(requestedProfileId || '').trim();
+
+    if (normalizedRequested) {
+      return normalizedRequested;
+    }
+
+    const base = this.slugifyProfileId(name) || 'plan-profile';
+    let candidate = base;
+    let suffix = 2;
+
+    while (plans.some((plan) => plan.profileId === candidate)) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
+  }
+
+  async findById(id: string) {
+    const plans = await this.database.getPlans();
+    return plans.find((plan) => plan.id === id) || null;
+  }
+
+  async findByProfileId(profileId: string) {
+    const plans = await this.database.getPlans();
+    return plans.find((plan) => plan.profileId === profileId) || null;
+  }
 
   async findAll() {
+    const plans = await this.database.getPlans();
     return {
-      total: SEED_PLANS.length,
-      data: SEED_PLANS.map(buildUIPlan),
+      total: plans.length,
+      data: plans.map(buildUIPlan),
     };
   }
 
   async findOne(id: string) {
-    const plan = SEED_PLANS.find((p) => p.id === id);
+    const plans = await this.database.getPlans();
+    const plan = plans.find((p) => p.id === id);
     if (!plan) throw new NotFoundException(`Plan #${id} introuvable`);
     return buildUIPlan(plan);
   }
 
   async create(dto: CreatePlanDto) {
-    const exists = SEED_PLANS.find((p) => p.profileId === dto.profileId);
+    const plans = await this.database.getPlans();
+    const profileId = this.resolveProfileId(plans, dto.profileId, dto.name);
+    const exists = plans.find((p) => p.profileId === profileId);
     if (exists)
-      throw new ConflictException(`Profile ID '${dto.profileId}' déjà utilisé`);
+      throw new ConflictException(`Profile ID '${profileId}' déjà utilisé`);
 
     // Créer le profil PPPoE sur RouterOS
     try {
       const rateLimit = `${dto.download}M/${dto.upload}M`;
       await this.routeros.createPPPoEProfile({
-        name: dto.profileId,
+        name: profileId,
         'rate-limit': rateLimit,
         comment: dto.name,
       });
-      this.logger.log(`Profil PPPoE créé sur RouterOS: ${dto.profileId} @ ${rateLimit}`);
+      this.logger.log(`Profil PPPoE créé sur RouterOS: ${profileId} @ ${rateLimit}`);
     } catch (err: any) {
       this.logger.warn(`RouterOS non disponible, profil PPPoE non créé: ${err.message}`);
     }
 
-    const newPlan = {
-      id: `plan${idCounter++}`,
+    const newPlan: PersistedPlan = {
+      id: this.nextPlanId(plans),
       name: dto.name,
       type: dto.type || 'Fiber',
-      profileId: dto.profileId,
+      profileId,
       price: dto.price,
-      priceWhole: dto.price.toLocaleString('fr'),
-      priceFraction: '',
       download: dto.download,
       upload: dto.upload,
-      downloadBar: '',
-      uploadBar: '',
       quota: dto.quota || 'Illimité',
-      quotaIcon: dto.quota && dto.quota !== 'Illimité' ? 'data_usage' : 'all_inclusive',
       validity: dto.validity || '30 jours',
       popular: dto.popular || false,
       description: dto.description || '',
       createdAt: new Date().toISOString(),
     };
 
-    SEED_PLANS.push(newPlan);
+    plans.push(newPlan);
+    await this.database.savePlans(plans);
     return buildUIPlan(newPlan);
   }
 
   async update(id: string, dto: UpdatePlanDto) {
-    const idx = SEED_PLANS.findIndex((p) => p.id === id);
+    const plans = await this.database.getPlans();
+    const idx = plans.findIndex((p) => p.id === id);
     if (idx === -1) throw new NotFoundException(`Plan #${id} introuvable`);
 
-    const plan = SEED_PLANS[idx];
+    const plan = plans[idx];
+    const requestedProfileId = String(dto.profileId || '').trim();
+    const nextProfileId = requestedProfileId || plan.profileId;
+
+    if (nextProfileId !== plan.profileId) {
+      const duplicate = plans.find((item) => item.id !== id && item.profileId === nextProfileId);
+      if (duplicate) {
+        throw new ConflictException(`Profile ID '${nextProfileId}' déjà utilisé`);
+      }
+    }
 
     // Mettre à jour le profil PPPoE sur RouterOS
     try {
@@ -177,25 +158,28 @@ export class PlansService {
           updateData['rate-limit'] = `${dl}M/${ul}M`;
         }
         if (dto.name) updateData.comment = dto.name;
+        if (nextProfileId !== plan.profileId) updateData.name = nextProfileId;
 
         if (Object.keys(updateData).length > 0) {
           await this.routeros.updatePPPoEProfile(roProfile['.id'], updateData);
-          this.logger.log(`Profil PPPoE mis à jour sur RouterOS: ${plan.profileId}`);
+          this.logger.log(`Profil PPPoE mis à jour sur RouterOS: ${nextProfileId}`);
         }
       }
     } catch (err: any) {
       this.logger.warn(`RouterOS sync échoué: ${err.message}`);
     }
 
-    SEED_PLANS[idx] = { ...plan, ...dto };
-    return buildUIPlan(SEED_PLANS[idx]);
+    plans[idx] = { ...plan, ...dto, profileId: nextProfileId };
+    await this.database.savePlans(plans);
+    return buildUIPlan(plans[idx]);
   }
 
   async remove(id: string) {
-    const idx = SEED_PLANS.findIndex((p) => p.id === id);
+    const plans = await this.database.getPlans();
+    const idx = plans.findIndex((p) => p.id === id);
     if (idx === -1) throw new NotFoundException(`Plan #${id} introuvable`);
 
-    const plan = SEED_PLANS[idx];
+    const plan = plans[idx];
 
     // Supprimer le profil PPPoE sur RouterOS
     try {
@@ -208,7 +192,8 @@ export class PlansService {
       this.logger.warn(`RouterOS delete échoué: ${err.message}`);
     }
 
-    SEED_PLANS.splice(idx, 1);
+    plans.splice(idx, 1);
+    await this.database.savePlans(plans);
     return { message: `Plan #${id} supprimé` };
   }
 

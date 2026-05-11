@@ -164,7 +164,22 @@ export class TicketsService {
       throw new BadRequestException(`Ticket ${ticketNumber} expire`);
     }
 
-    await this.routeros.ensureTemporaryHotspotUser(ticket.ticketNumber, macAddress, 'default');
+    const payments = await this.database.getPayments();
+    const payment = payments.find((item) => item.id === ticket.paymentId);
+    const plans = await this.database.getPlans();
+    const linkedPlan = payment?.planId
+      ? plans.find((item) => item.id === payment.planId)
+      : null;
+    const rateLimit = linkedPlan
+      ? `${linkedPlan.download}M/${linkedPlan.upload}M`
+      : undefined;
+
+    await this.routeros.ensureTemporaryHotspotUser(
+      ticket.ticketNumber,
+      macAddress,
+      'default',
+      rateLimit,
+    );
 
     let resolvedIp = ip || '';
 

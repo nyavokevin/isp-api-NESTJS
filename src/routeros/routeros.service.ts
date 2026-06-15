@@ -280,13 +280,6 @@ export class RouterOSService implements OnModuleDestroy {
 
   async getHotspotUserByName(name: string): Promise<any> {
     const normalizedName = name.trim().toLowerCase();
-    const results = await this.execute('/ip/hotspot/user/print', { '?name': name });
-    const directMatch = results.find((item) => this.getHotspotUserName(item) === normalizedName);
-
-    if (directMatch) {
-      return directMatch;
-    }
-
     const allUsers = await this.execute('/ip/hotspot/user/print');
     return allUsers.find((item) => this.getHotspotUserName(item) === normalizedName) || null;
   }
@@ -343,8 +336,8 @@ export class RouterOSService implements OnModuleDestroy {
     const payload = {
       password: ticket,
       profile,
-      'rate-limit': rateLimit || '',
-      'mac-address': macAddress || '',
+      ...(rateLimit ? { 'rate-limit': rateLimit } : {}),
+      ...(macAddress ? { 'mac-address': macAddress } : {}),
       comment: 'Temporary hotspot user created from ticket validation',
     };
 

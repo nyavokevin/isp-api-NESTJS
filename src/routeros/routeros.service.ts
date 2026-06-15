@@ -298,7 +298,6 @@ export class RouterOSService implements OnModuleDestroy {
       profile: data.profile || 'default',
     };
 
-    if (data['rate-limit']) params['rate-limit'] = data['rate-limit'];
     if (data['mac-address']) params['mac-address'] = data['mac-address'];
     if (data.comment) params.comment = data.comment;
 
@@ -315,7 +314,6 @@ export class RouterOSService implements OnModuleDestroy {
     const params: Record<string, string> = { '.id': id };
     if (data.password !== undefined) params.password = data.password;
     if (data.profile !== undefined) params.profile = data.profile;
-    if (data['rate-limit'] !== undefined) params['rate-limit'] = data['rate-limit'];
     if (data['mac-address'] !== undefined) params['mac-address'] = data['mac-address'];
     if (data.comment !== undefined) params.comment = data.comment;
     return this.execute('/ip/hotspot/user/set', params);
@@ -336,7 +334,6 @@ export class RouterOSService implements OnModuleDestroy {
     const payload = {
       password: ticket,
       profile,
-      ...(rateLimit ? { 'rate-limit': rateLimit } : {}),
       ...(macAddress ? { 'mac-address': macAddress } : {}),
       comment: 'Temporary hotspot user created from ticket validation',
     };
@@ -351,7 +348,6 @@ export class RouterOSService implements OnModuleDestroy {
         name: ticket,
         password: ticket,
         profile,
-        'rate-limit': rateLimit,
         'mac-address': macAddress,
         comment: payload.comment,
       });
